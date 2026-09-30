@@ -1,0 +1,16 @@
+{
+  "name": "campus-loop-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "In-memory Express API for the campus lost and found prototype",
+  "main": "server.js",
+  "scripts": {
+    "dev": "node --watch server.js",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "hoora": "file:.."
+  }
+}
