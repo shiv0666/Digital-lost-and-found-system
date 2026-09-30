@@ -42,19 +42,4 @@ Open the Vite URL printed in the terminal (normally `http://localhost:5173`). Vi
 3. Switch to Desk view and enter the student's OTP on that item's card to resolve and remove it from the open feed.
 4. Submit a lost report and add found items to see AI potential-match scores above 65% in Desk view.
 
-The app uses in-memory arrays, so items and claims reset when the Express process restarts. The role switch and `X-Campus-Role` header are for hackathon demonstration only, not production authentication; use campus SSO or another server-verified identity mechanism before deployment. The private admin note is omitted from student item responses.# React + Vite
-
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
-
-Currently, two official plugins are available:
-
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+The app uses in-memory arrays, so items and claims reset when the Express process restarts. The role switch and `X-Campus-Role` header are for hackathon demonstration only, not production authentication; use campus SSO or another server-verified identity mechanism before deployment. The private admin note is omitted from student item responses.
