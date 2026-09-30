@@ -1,4 +1,4 @@
-# CampusKeep — Digital Lost & Found
+# Campusloop — Digital Lost & Found
 
 A full-stack lost and found system for a college campus. Students report items, browse approved listings, submit ownership proof, and track decisions. Administrators use a separate dashboard to verify reports, review claims, manage listings and users, and mark items returned.
 
@@ -17,6 +17,7 @@ The frontend calls a REST API. A JWT bearer token protects every item, claim, up
 - Student registration, login, protected routes, profile
 - Lost and found reports submitted as `PENDING`
 - Admin approval or rejection before public visibility
+- Admin-controlled `PUBLIC`/`PRIVATE` visibility for sensitive found items
 - Search, type/category/location filters, and date sorting
 - Ownership claims with identifying details and optional image proof
 - Admin claim decisions and comments; claim history for students
@@ -34,6 +35,7 @@ backend/
     models.py     User, Item, Claim tables
     schemas.py    API validation and response models
     main.py       REST routes and uploads
+    migrations.py Additive privacy migration for existing databases
   uploads/        Local images
   seed.py         Demo accounts, items, claims
   smoke_test.py   Complete API workflow check
@@ -48,11 +50,11 @@ docker-compose.yml
 
 `users`: id, name, unique email, password hash, role, created time.
 
-`items`: id, reporter FK, title, description, additional details, category, location, event date, image path, type, status, timestamps.
+`items`: id, reporter FK, title, description, additional details, category, location, event date, image path, type, status, visibility, admin-only verification details, timestamps.
 
 `claims`: id, item FK, student FK, ownership proof, identifying details, contents/configuration, additional proof, image path, status, admin comment, timestamps. A student can submit only one claim per item. Item and claim statuses have database constraints.
 
-Tables are created automatically when the API starts. For a production deployment, add Alembic migrations before changing the schema.
+Tables are created automatically when the API starts. On an existing database, startup adds the privacy columns without replacing item or claim data; existing items become `PUBLIC`. Back up production data before deployment. For later schema changes, use versioned migrations.
 
 ## Run locally
 
@@ -126,11 +128,11 @@ The seed adds eight sample items and three sample claims. There is no hardcoded 
 | Images | `POST /uploads` |
 | Items | `GET /items`, `GET /items/my`, `GET /items/{id}`, `POST /items`, `PUT /items/{id}`, `DELETE /items/{id}` |
 | Claims | `POST /claims`, `GET /claims/my`, `GET /claims/{id}` |
-| Admin items | `GET /admin/items`, `GET /admin/items/pending`, `PUT /admin/items/{id}/approve`, `/reject`, `/status` |
+| Admin items | `GET /admin/items`, `GET /admin/items/pending`, `GET /admin/items/{id}`, `POST /admin/items`, `PUT /admin/items/{id}/privacy`, `/approve`, `/reject`, `/status`, `POST /admin/items/{id}/private-claims` |
 | Admin claims | `GET /admin/claims`, `GET /admin/claims/pending`, `PUT /admin/claims/{id}/approve`, `/reject` |
 | Admin other | `GET /admin/users`, `DELETE /admin/users/{id}`, `GET /admin/stats` |
 
-The public browse API returns only `APPROVED` items. Students cannot claim their own reports. Approving a claim marks the item `CLAIMED` and rejects other pending claims on that item. Only an admin can move a claimed item to `RETURNED`. Returned items no longer appear in Browse Items.
+The student browse API returns only `APPROVED` and `PUBLIC` items. Students cannot fetch or claim a private item by its ID. Student reports default to `PUBLIC`; only admins can change visibility or read verification details. In **Admin → Item Privacy**, admins can create a private item, search all reports, compare it with a student's lost report, and record a private verification. That creates a pending claim for the student, which the admin approves or rejects in the existing Pending Claims page. Approving a claim marks the item `CLAIMED` and rejects other pending claims on that item. Only an admin can move a claimed item to `RETURNED`. Returned items no longer appear in Browse Items.
 
 ## Verification
 
@@ -141,8 +143,8 @@ cd ../frontend
 npm run build
 ```
 
-The smoke test checks registration, login, role boundaries, pending visibility, item approval, ownership claim creation and approval, duplicate prevention, and return status.
+The smoke test checks registration, login, role boundaries, pending visibility, item approval, ownership claim creation and approval, duplicate prevention, private item isolation, and return status.
 
 ## Future improvements
 
-Add schema migrations, object storage for images, rate limiting, password reset, audit history for admin decisions, and a stronger admin user management workflow.
+Add object storage for images, rate limiting, password reset, audit history for admin decisions, and a stronger admin user management workflow.

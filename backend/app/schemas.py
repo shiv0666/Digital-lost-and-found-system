@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from typing import Literal
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 class UserOut(BaseModel):
@@ -33,8 +34,27 @@ class ItemOut(ItemIn):
     id: int
     reported_by: int
     status: str
+    visibility: Literal["PUBLIC", "PRIVATE"]
     created_at: datetime
     updated_at: datetime
+
+class AdminItemIn(ItemIn):
+    visibility: Literal["PUBLIC", "PRIVATE"] = "PUBLIC"
+    verification_details: str = Field(default="", max_length=5000)
+
+class AdminItemOut(ItemOut):
+    verification_details: str
+
+class AdminPrivacyIn(BaseModel):
+    visibility: Literal["PUBLIC", "PRIVATE"]
+    verification_details: str | None = Field(default=None, max_length=5000)
+
+class AdminPrivateClaimIn(BaseModel):
+    student_id: int
+    proof_text: str = Field(min_length=10)
+    identifying_details: str = Field(min_length=5)
+    contents_details: str = ""
+    additional_proof: str = ""
 
 class ClaimIn(BaseModel):
     item_id: int

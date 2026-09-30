@@ -31,11 +31,13 @@ class Item(Base):
     image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     type: Mapped[str] = mapped_column(String(5))
     status: Mapped[str] = mapped_column(String(10), default="PENDING")
+    visibility: Mapped[str] = mapped_column(String(7), default="PUBLIC", server_default="PUBLIC")
+    verification_details: Mapped[str] = mapped_column(Text, default="", server_default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
     reporter: Mapped[User] = relationship(back_populates="items")
     claims: Mapped[list["Claim"]] = relationship(back_populates="item", cascade="all, delete-orphan")
-    __table_args__ = (CheckConstraint("type IN ('LOST','FOUND')"), CheckConstraint("status IN ('PENDING','APPROVED','REJECTED','CLAIMED','RETURNED','CLOSED')"))
+    __table_args__ = (CheckConstraint("type IN ('LOST','FOUND')"), CheckConstraint("status IN ('PENDING','APPROVED','REJECTED','CLAIMED','RETURNED','CLOSED')"), CheckConstraint("visibility IN ('PUBLIC','PRIVATE')", name="ck_items_visibility"))
 
 class Claim(Base):
     __tablename__ = "claims"

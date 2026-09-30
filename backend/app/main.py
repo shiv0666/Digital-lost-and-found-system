@@ -11,7 +11,8 @@ from sqlalchemy.orm import Session
 from .auth import admin, current_user, hasher, student, token_for
 from .database import Base, engine, get_db
 from .models import Claim, Item, User
-from .schemas import ClaimIn, ClaimOut, Decision, ItemIn, ItemOut, LoginIn, RegisterIn, StatusIn, UserOut
+from .migrations import migrate_private_items
+from .schemas import AdminItemIn, AdminItemOut, AdminPrivacyIn, AdminPrivateClaimIn, ClaimIn, ClaimOut, Decision, ItemIn, ItemOut, LoginIn, RegisterIn, StatusIn, UserOut
 
 UPLOADS = Path(__file__).resolve().parent.parent / "uploads"
 UPLOADS.mkdir(exist_ok=True)
@@ -19,6 +20,7 @@ UPLOADS.mkdir(exist_ok=True)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(engine)
+    migrate_private_items(engine)
     yield
 
 app = FastAPI(title="Campus Lost & Found API", lifespan=lifespan)
@@ -78,7 +80,7 @@ async def upload(file: UploadFile = File(...), user: User = Depends(current_user
 
 @app.get("/items", response_model=list[ItemOut])
 def items(q: str = "", type: str = "", category: str = "", location: str = "", sort: str = "newest", db: Session = Depends(get_db), user: User = Depends(current_user)):
-    query = select(Item).where(Item.status == "APPROVED")
+    query = select(Item).where(Item.status == "APPROVED", Item.visibility == "PUBLIC")
     if q:
         query = query.where(or_(Item.title.ilike(f"%{q}%"), Item.description.ilike(f"%{q}%")))
     if type:
@@ -91,11 +93,13 @@ def items(q: str = "", type: str = "", category: str = "", location: str = "", s
 
 @app.get("/items/my", response_model=list[ItemOut])
 def my_items(db: Session = Depends(get_db), user: User = Depends(student)):
-    return db.scalars(select(Item).where(Item.reported_by == user.id).order_by(Item.created_at.desc())).all()
+    return db.scalars(select(Item).where(Item.reported_by == user.id, Item.visibility == "PUBLIC").order_by(Item.created_at.desc())).all()
 
 @app.get("/items/{item_id}", response_model=ItemOut)
 def item_detail(item_id: int, db: Session = Depends(get_db), user: User = Depends(current_user)):
     item = item_or_404(db, item_id)
+    if item.visibility == "PRIVATE" and user.role != "ADMIN":
+        raise HTTPException(404, "Item not found")
     claimant = any(c.student_id == user.id for c in item.claims)
     if item.status != "APPROVED" and user.role != "ADMIN" and item.reported_by != user.id and not claimant:
         raise HTTPException(404, "Item not found")
@@ -114,6 +118,8 @@ def create_item(data: ItemIn, db: Session = Depends(get_db), user: User = Depend
 @app.put("/items/{item_id}", response_model=ItemOut)
 def edit_item(item_id: int, data: ItemIn, db: Session = Depends(get_db), user: User = Depends(student)):
     item = item_or_404(db, item_id)
+    if item.visibility == "PRIVATE":
+        raise HTTPException(404, "Item not found")
     if item.reported_by != user.id or item.status not in {"PENDING", "REJECTED"}:
         raise HTTPException(403, "Only your pending or rejected report can be edited")
     if data.type not in {"LOST", "FOUND"}:
@@ -127,6 +133,8 @@ def edit_item(item_id: int, data: ItemIn, db: Session = Depends(get_db), user: U
 @app.delete("/items/{item_id}", status_code=204)
 def delete_item(item_id: int, db: Session = Depends(get_db), user: User = Depends(current_user)):
     item = item_or_404(db, item_id)
+    if item.visibility == "PRIVATE" and user.role != "ADMIN":
+        raise HTTPException(404, "Item not found")
     if user.role != "ADMIN" and (item.reported_by != user.id or item.status not in {"PENDING", "REJECTED"}):
         raise HTTPException(403, "Cannot delete this report")
     db.delete(item)
@@ -135,6 +143,8 @@ def delete_item(item_id: int, db: Session = Depends(get_db), user: User = Depend
 @app.post("/claims", response_model=ClaimOut, status_code=201)
 def create_claim(data: ClaimIn, db: Session = Depends(get_db), user: User = Depends(student)):
     item = item_or_404(db, data.item_id)
+    if item.visibility == "PRIVATE":
+        raise HTTPException(404, "Item not found")
     if item.status != "APPROVED":
         raise HTTPException(409, "Item is not available for claims")
     if item.reported_by == user.id:
@@ -162,14 +172,60 @@ def claim_detail(claim_id: int, db: Session = Depends(get_db), user: User = Depe
     return claim
 
 @app.get("/admin/items", dependencies=[Depends(admin)])
-def admin_items(db: Session = Depends(get_db)):
-    rows = db.scalars(select(Item).order_by(Item.created_at.desc())).all()
-    return [{**ItemOut.model_validate(i).model_dump(mode="json"), "reporter_name": i.reporter.name} for i in rows]
+def admin_items(q: str = "", db: Session = Depends(get_db)):
+    query = select(Item)
+    if q:
+        query = query.where(or_(Item.title.ilike(f"%{q}%"), Item.description.ilike(f"%{q}%"), Item.location.ilike(f"%{q}%"), Item.verification_details.ilike(f"%{q}%")))
+    rows = db.scalars(query.order_by(Item.created_at.desc())).all()
+    return [{**AdminItemOut.model_validate(i).model_dump(mode="json"), "reporter_name": i.reporter.name} for i in rows]
 
 @app.get("/admin/items/pending", dependencies=[Depends(admin)])
 def pending_items(db: Session = Depends(get_db)):
     rows = db.scalars(select(Item).where(Item.status == "PENDING").order_by(Item.created_at)).all()
-    return [{**ItemOut.model_validate(i).model_dump(mode="json"), "reporter_name": i.reporter.name} for i in rows]
+    return [{**AdminItemOut.model_validate(i).model_dump(mode="json"), "reporter_name": i.reporter.name} for i in rows]
+
+@app.get("/admin/items/{item_id}", response_model=AdminItemOut)
+def admin_item_detail(item_id: int, db: Session = Depends(get_db), user: User = Depends(admin)):
+    return item_or_404(db, item_id)
+
+@app.post("/admin/items", response_model=AdminItemOut, status_code=201)
+def admin_create_item(data: AdminItemIn, db: Session = Depends(get_db), user: User = Depends(admin)):
+    if data.type not in {"LOST", "FOUND"}:
+        raise HTTPException(422, "Type must be LOST or FOUND")
+    item = Item(**data.model_dump(), reported_by=user.id, status="APPROVED")
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return item
+
+@app.put("/admin/items/{item_id}/privacy", response_model=AdminItemOut)
+def update_item_privacy(item_id: int, data: AdminPrivacyIn, db: Session = Depends(get_db), user: User = Depends(admin)):
+    item = item_or_404(db, item_id)
+    item.visibility = data.visibility
+    if data.verification_details is not None:
+        item.verification_details = data.verification_details
+    db.commit()
+    return item
+
+@app.post("/admin/items/{item_id}/private-claims", response_model=ClaimOut, status_code=201)
+def admin_create_private_claim(item_id: int, data: AdminPrivateClaimIn, db: Session = Depends(get_db), user: User = Depends(admin)):
+    item = item_or_404(db, item_id)
+    claimant = db.get(User, data.student_id)
+    if item.visibility != "PRIVATE" or item.status != "APPROVED":
+        raise HTTPException(409, "Only approved private items can be privately verified")
+    if not claimant or claimant.role != "STUDENT" or claimant.id == item.reported_by:
+        raise HTTPException(422, "Choose an eligible student")
+    claim = Claim(item_id=item.id, student_id=claimant.id, proof_text=data.proof_text,
+                  identifying_details=data.identifying_details, contents_details=data.contents_details,
+                  additional_proof=data.additional_proof)
+    db.add(claim)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "This student already has a claim for the item")
+    db.refresh(claim)
+    return claim
 
 @app.put("/admin/items/{item_id}/approve", response_model=ItemOut)
 def approve_item(item_id: int, db: Session = Depends(get_db), user: User = Depends(admin)):
